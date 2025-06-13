@@ -1,0 +1,39 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Croquet Chat</title>
+        <style>
+            body {
+                display: flex;
+                user-select: none
+            }
+        </style>
+    </head>
+    <body>
+
+        <div style="height:100%;width:100%">
+        <div id = "textOut"
+            style="position:absolute;top:5px;bottom:50px;left:5px;right:5px;border:1px solid;padding:5px;font:16px/26px Helvetica, Arial, sans-serif;overflow:auto;">
+            <div></div>
+        </div>
+        <div style="position:absolute;bottom:5px;left:5px;right:5px">
+                <input type="text"
+                    id = "textIn"
+                    maxlength="500"
+                    onkeydown = "if (event.keyCode == 13) document.getElementById('sendButton').click()"
+                    style="width:90%;border:1px solid;padding:5px;font:16px/26px Helvetica, Arial, sans-serif"
+                />
+                <input type="button"
+                    id = "sendButton"
+                    value = "Send"
+                />
+                <input type="button"
+                    id = "resetButton"
+                    value = "Reset"
+                />
+        </div>
+        </div>
+        <script src="chat.js" type="module">
+    </script>
+    </body>
+</html>
