@@ -41,8 +41,9 @@ class ChatModel extends Multisynq.Model {
     newPost(post) {
         // send post to the AI relay
         const request = {
+            users: Object.values(this.users), // send the list of users to the AI
             history: this.history.slice(-20), // send the last 20 messages to the AI
-            text: post.text.slice(3).trim(), // remove "ai:" prefix
+            text: post.text.trim(),
             // in a Model we can only store QFuncs, not regular functions
             // so we use a QFunc to handle the response
             resolve: this.createQFunc((response) => {
@@ -57,7 +58,7 @@ class ChatModel extends Multisynq.Model {
     addToHistory(item){
         this.history.push(item);
         if (this.history.length > 100) this.history.shift();
-        this.publish("history", "update", this.history);
+        this.publish("history", "update");
     }
 
     chatReset(viewId) {
@@ -181,11 +182,12 @@ class ChatView extends Multisynq.View {
 
     constructor(model) {
         super(model);
+        this.model = model;
         const sendButton = document.getElementById("sendButton");
         sendButton.onclick = event => this.onSendClick(event);
         const resetButton = document.getElementById("resetButton");
         resetButton.onclick = event => this.onResetClick(event);
-        this.subscribe("history", "update", history => this.refreshHistory(history));
+        this.subscribe("history", "update", this.refreshHistory);
         this.refreshHistory(model.history);
 
         this.aiRelayView = new AIRelayView(this.wellKnownModel("aiRelay"));
@@ -202,9 +204,12 @@ class ChatView extends Multisynq.View {
         this.publish("reset", "chatReset", this.viewId);
     }
 
-    refreshHistory(history) {
+    refreshHistory() {
         const textOut = document.getElementById("textOut");
-        textOut.innerHTML = `<b>Welcome to Multisynq Chat, ${ThisUser}!</b><br><br><i>AI is here</i><br>` + history.join("<br>");
+        textOut.innerHTML =
+            `<b>Welcome to Multisynq Chat, ${ThisUser}!</b><br>
+            <i>AI is here, along with ${Object.values(this.model.users).join(", ")}</i><br><br>
+            ${this.model.history.join("<br>")}`;
         textOut.scrollTop = textOut.scrollHeight;
     }
 
@@ -223,7 +228,7 @@ class AIRelayView extends Multisynq.View {
         if (electedViewId !== this.viewId) return; // only process requests if I'm the elected view
         console.log(electedViewId, "relaying AI request", requestId, request);
 
-        const text = await this.processAIRequest(request.history, request.text);
+        const text = await this.processAIRequest(request);
 
         // If the elected view has changed while we were processing the request, ignore it
         if (this.model.electedViewId !== this.viewId) {
@@ -239,7 +244,7 @@ class AIRelayView extends Multisynq.View {
         this.publish(this.model.id, "relay-response", response);
     }
 
-    async processAIRequest(history, text) {
+    async processAIRequest({users, history, text}) {
         const body = JSON.stringify({
             run: {
                 model: "@cf/meta/llama-3.1-8b-instruct-fast",
@@ -250,10 +255,12 @@ class AIRelayView extends Multisynq.View {
                             content:
 `You are "AI", a friendly participant in a multiuser chat room.
 You are expected to respond to user messages in a helpful and engaging manner.
-You should not respond to system messages or other AI messages.
+You should not respond to system messages or your own messages (from user name "AI").
 You should not use any HTML formatting in your responses.
 You should not use any special formatting in your responses.
 You should not use any markdown formatting in your responses.
+There is no direct messaging in this chat room.
+The users in the chat room are: ${users.join(", ")}.
 This is the latest chat history:
 ${history.join("\n")}`
                         },

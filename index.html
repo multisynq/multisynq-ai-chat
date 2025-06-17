@@ -2,26 +2,80 @@
     <head>
         <meta charset="utf-8">
         <title>Multisynq AI Chat</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
+            html, body {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
             body {
                 display: flex;
-                user-select: none
+                flex-direction: column;
+                height: 100vh;
+                width: 100vw;
+                overflow: hidden;
+            }
+            .full-size {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                width: 100%;
+            }
+            #textOut {
+                flex: 1 1 auto;
+                border: 1px solid;
+                padding: 5px;
+                font: 16px/26px Helvetica, Arial, sans-serif;
+                overflow-y: auto;
+                margin: 5px;
+                background: #fff;
+            }
+            .input-row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                padding: 5px;
+                margin: 0 5px 5px 5px;
+                background: #fafafa;
+            }
+            #textIn {
+                flex: 1 1 auto;
+                min-width: 0;
+                border: 1px solid;
+                padding: 5px;
+                font: 16px/26px Helvetica, Arial, sans-serif;
+            }
+            @media (max-width: 600px) {
+                #textOut {
+                    font-size: 14px;
+                    padding: 3px;
+                }
+                .input-row {
+                    flex-direction: column;
+                    gap: 4px;
+                    align-items: stretch;
+                    padding: 3px;
+                }
+                #textIn {
+                    font-size: 14px;
+                    padding: 3px;
+                }
             }
         </style>
     </head>
     <body>
 
-        <div style="height:100%;width:100%">
-        <div id = "textOut"
-            style="position:absolute;top:5px;bottom:50px;left:5px;right:5px;border:1px solid;padding:5px;font:16px/26px Helvetica, Arial, sans-serif;overflow:auto;">
-            <div></div>
-        </div>
-        <div style="position:absolute;bottom:5px;left:5px;right:5px">
+        <div class="full-size">
+            <div id="textOut">
+                <div></div>
+            </div>
+            <div class="input-row">
                 <input type="text"
                     id = "textIn"
                     maxlength="500"
                     onkeydown = "if (event.keyCode == 13) document.getElementById('sendButton').click()"
-                    style="width:90%;border:1px solid;padding:5px;font:16px/26px Helvetica, Arial, sans-serif"
                 />
                 <input type="button"
                     id = "sendButton"
@@ -31,7 +85,7 @@
                     id = "resetButton"
                     value = "Reset"
                 />
-        </div>
+            </div>
         </div>
         <script src="chat.js" type="module">
     </script>
