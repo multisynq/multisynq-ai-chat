@@ -23,6 +23,8 @@ class ChatModel extends Multisynq.Model {
         this.subscribe("reset", "chatReset", this.chatReset);
         this.subscribe(this.sessionId, "view-join", this.userJoin);
         this.subscribe(this.sessionId, "view-exit", this.userDrop);
+
+        AIRelayModel.create();
     }
 
     userJoin({viewId, viewData: {userName}}) {
@@ -37,6 +39,17 @@ class ChatModel extends Multisynq.Model {
    }
 
     newPost(post) {
+        // send post to the AI relay
+        const request = {
+            history: this.history.slice(-20), // send the last 20 messages to the AI
+            text: post.text.slice(3).trim(), // remove "ai:" prefix
+            // in a Model we can only store QFuncs, not regular functions
+            // so we use a QFunc to handle the response
+            resolve: this.createQFunc((response) => {
+                this.addToHistory(`<b>AI:</b> ${this.escape(response.text)}`);
+            }),
+        };
+        this.wellKnownModel("aiRelay").relayRequest(request);
         const userName = this.users[post.viewId];
         this.addToHistory(`<b>${userName}:</b> ${this.escape(post.text)}`);
     }
@@ -61,6 +74,104 @@ class ChatModel extends Multisynq.Model {
 ChatModel.register("ChatModel");
 
 //------------------------------------------------------------------------------------------
+// Elected
+//
+// Keeps track of an "elected" view that is responsible for certain actions.
+//------------------------------------------------------------------------------------------
+
+class Elected extends Multisynq.Model {
+    init() {
+        super.init();
+        this.viewIds = new Set();
+        this.electedViewId = "";
+        this.subscribe(this.sessionId, "view-join", this.viewJoined);
+        this.subscribe(this.sessionId, "view-exit", this.viewExited);
+    }
+
+    viewJoined({viewId}) {
+        this.viewIds.add(viewId);
+        this.viewsChanged();
+    }
+
+    viewExited({viewId}) {
+        this.viewIds.delete(viewId);
+        this.viewsChanged();
+    }
+
+    viewsChanged() {
+        if (!this.viewIds.has(this.electedViewId)) {
+            this.electedViewId = this.viewIds.values().next().value;
+            this.viewElected(this.electedViewId);
+        }
+    }
+
+    viewElected(viewId) {
+        console.log(this.now(), "elected", this.electedViewId);
+        this.publish(this.sessionId, "elected-view", viewId);
+    }
+}
+Elected.register("Elected");
+
+//------------------------------------------------------------------------------------------
+// AIRelayModel
+//
+// Relays AI requests to the elected view.
+//------------------------------------------------------------------------------------------
+
+class AIRelayModel extends Elected {
+    init() {
+        super.init();
+        this.beWellKnownAs("aiRelay");
+        this.requestId = 0;
+        this.pendingRequests = new Map();
+        this.subscribe(this.id, "relay-response", this.relayResponse);
+    }
+
+    viewElected() {
+        if (!this.electedViewId) return;
+        // console.log(this.now(), "elected view", this.electedViewId);
+        // relay pending requests to the newly elected view, if any
+        for (const [requestId, request] of this.pendingRequests.entries()) {
+            // console.log(this.now(), "relay request", this.electedViewId, requestId, request);
+            this.publish(this.id, "relay-request", {
+                electedViewId: this.electedViewId,
+                requestId,
+                request
+            });
+        }
+    }
+
+    relayRequest(request) {
+        const requestId = ++this.requestId;
+        this.pendingRequests.set(requestId, request);
+        if (!this.electedViewId) {
+            // console.log(this.now(), "no elected view, deferring request", requestId, request);
+            return; // defer until we have an elected view
+        }
+        // if we have an elected view, relay the request immediately
+        // console.log(this.now(), "relay request", this.electedViewId, requestId, request);
+        this.publish(this.id, "relay-request", {
+            electedViewId: this.electedViewId,
+            requestId,
+            request
+        });
+    }
+
+    relayResponse(response) {
+        // console.log(this.now(), "relay response", response);
+        const request = this.pendingRequests.get(response.requestId);
+        if (request) {
+            this.pendingRequests.delete(response.requestId);
+            if (request.resolve) {
+                request.resolve(response);
+            }
+        }
+    }
+}
+AIRelayModel.register("AIRelayModel");
+
+
+//------------------------------------------------------------------------------------------
 // ChatView
 //
 // Posts messages, and displays message history.
@@ -76,6 +187,8 @@ class ChatView extends Multisynq.View {
         resetButton.onclick = event => this.onResetClick(event);
         this.subscribe("history", "update", history => this.refreshHistory(history));
         this.refreshHistory(model.history);
+
+        this.aiRelayView = new AIRelayView(this.wellKnownModel("aiRelay"));
     }
 
     onSendClick() {
@@ -91,13 +204,88 @@ class ChatView extends Multisynq.View {
 
     refreshHistory(history) {
         const textOut = document.getElementById("textOut");
-        textOut.innerHTML = "<b>Welcome to Multisynq Chat!</b><br><br>" + history.join("<br>");
+        textOut.innerHTML = `<b>Welcome to Multisynq Chat, ${ThisUser}!</b><br><br><i>AI is here</i><br>` + history.join("<br>");
         textOut.scrollTop = textOut.scrollHeight;
     }
 
 }
 
 
+class AIRelayView extends Multisynq.View {
+
+    constructor(model) {
+        super(model);
+        this.model = model;
+        this.subscribe(model.id, "relay-request", this.relayRequest);
+    }
+
+    async relayRequest({electedViewId, requestId, request}) {
+        if (electedViewId !== this.viewId) return; // only process requests if I'm the elected view
+        console.log(electedViewId, "relaying AI request", requestId, request);
+
+        const text = await this.processAIRequest(request.history, request.text);
+
+        // If the elected view has changed while we were processing the request, ignore it
+        if (this.model.electedViewId !== this.viewId) {
+            console.log(this.viewId, "no longer elected, ignoring response", requestId);
+            return;
+        }
+
+        console.log(electedViewId, "relaying AI response", requestId);
+        const response = {
+            requestId,
+            text,
+        };
+        this.publish(this.model.id, "relay-response", response);
+    }
+
+    async processAIRequest(history, text) {
+        const body = JSON.stringify({
+            run: {
+                model: "@cf/meta/llama-3.1-8b-instruct-fast",
+                options: {
+                    messages: [
+                        {
+                            role: "system",
+                            content:
+`You are "AI", a friendly participant in a multiuser chat room.
+You are expected to respond to user messages in a helpful and engaging manner.
+You should not respond to system messages or other AI messages.
+You should not use any HTML formatting in your responses.
+You should not use any special formatting in your responses.
+You should not use any markdown formatting in your responses.
+This is the latest chat history:
+${history.join("\n")}`
+                        },
+                        {
+                            role: "user",
+                            content: text
+                        }
+                    ],
+                }
+            }
+        });
+        try {
+            const response = await fetch("https://ai-worker.synq.workers.dev", {
+                method: "POST",
+                body,
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const data = await response.json();
+            console.log(this.viewId, "received AI response:", data);
+            if (data.error) {
+                throw new Error(`AI error: ${data.error}`);
+            }
+            return data.response || "Sorry, I didn't understand that.";
+        } catch (error) {
+            console.error("Error processing AI request:", error);
+            return "Sorry, I couldn't process that request.";
+        }
+    }
+
+}
 
 //------------------------------------------------------------------------------------------
 // Join the session and spawn our model and view.
