@@ -5,7 +5,7 @@
 // This is an example of a simple chat application. It creates a chatroom where users can
 // post messages to a shared conversation.
 
-import { Model, View, Session } from "https://cdn.jsdelivr.net/npm/@multisynq/client@1.0.4/bundled/multisynq-client.esm.js";
+import * as Multisynq from "https://cdn.jsdelivr.net/npm/@multisynq/client@1.0.4/bundled/multisynq-client.esm.js";
 
 //------------------------------------------------------------------------------------------
 // ChatModel
@@ -14,7 +14,7 @@ import { Model, View, Session } from "https://cdn.jsdelivr.net/npm/@multisynq/cl
 // When a post arrives from one of them, adds it to the chat history along with their name.
 //------------------------------------------------------------------------------------------
 
-class ChatModel extends Model {
+class ChatModel extends Multisynq.Model {
 
     init() {
         this.users = {};
@@ -66,7 +66,7 @@ ChatModel.register("ChatModel");
 // Posts messages, and displays message history.
 //------------------------------------------------------------------------------------------
 
-class ChatView extends View {
+class ChatView extends Multisynq.View {
 
     constructor(model) {
         super(model);
@@ -122,7 +122,7 @@ function randomName() {
 
 const ThisUser = randomName();
 
-Session.join({
+Multisynq.Session.join({
     appId: "io.multisynq.ai-chat",
     apiKey: "234567_Paste_Your_Own_API_Key_Here_7654321",
     model: ChatModel,
