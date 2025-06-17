@@ -195,6 +195,8 @@ class ChatView extends Multisynq.View {
 
     onSendClick() {
         const textIn = document.getElementById("textIn");
+        const text = textIn.value.trim();
+        if (!text) return; // don't send empty messages
         const post = {viewId: this.viewId, text: textIn.value};
         this.publish("input", "newPost", post);
         textIn.value = "";
