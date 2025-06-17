@@ -19,10 +19,10 @@ class ChatModel extends Multisynq.Model {
     init() {
         this.users = {};
         this.history = [];
-        this.subscribe("input", "newPost", post => this.newPost(post));
-        this.subscribe("reset", "chatReset", viewId => this.chatReset(viewId));
-        this.subscribe(this.sessionId, "view-join", viewId => this.userJoin(viewId));
-        this.subscribe(this.sessionId, "view-exit", viewId => this.userDrop(viewId));
+        this.subscribe("input", "newPost", this.newPost);
+        this.subscribe("reset", "chatReset", this.chatReset);
+        this.subscribe(this.sessionId, "view-join", this.userJoin);
+        this.subscribe(this.sessionId, "view-exit", this.userDrop);
     }
 
     userJoin({viewId, viewData: {userName}}) {
