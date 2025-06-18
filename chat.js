@@ -39,6 +39,8 @@ class ChatModel extends Multisynq.Model {
    }
 
     newPost(post) {
+        const userName = this.users[post.viewId];
+        if (!userName) return; // ignore posts from users who are not in the room
         // send post to the AI relay
         const request = {
             users: Object.values(this.users), // send the list of users to the AI
@@ -47,11 +49,11 @@ class ChatModel extends Multisynq.Model {
             // in a Model we can only store QFuncs, not regular functions
             // so we use a QFunc to handle the response
             resolve: this.createQFunc((response) => {
-                this.addToHistory(`<b>AI:</b> ${this.escape(response.text)}`);
+                this.addToHistory(`<b>AI:</b> ${this.escape(response.text).replace(/\n/g, "<br>")}`);
             }),
         };
         this.wellKnownModel("aiRelay").relayRequest(request);
-        const userName = this.users[post.viewId];
+        // add the post to the history
         this.addToHistory(`<b>${userName}:</b> ${this.escape(post.text)}`);
     }
 
@@ -68,7 +70,7 @@ class ChatModel extends Multisynq.Model {
    }
 
     escape(text) { // Clean up text to remove html formatting characters
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
     }
 
 }
@@ -122,7 +124,7 @@ Elected.register("Elected");
 class AIRelayModel extends Elected {
     init() {
         super.init();
-        this.beWellKnownAs("aiRelay");
+        this.beWellKnownAs("aiRelay"); // so that any model or view can find me
         this.requestId = 0;
         this.pendingRequests = new Map();
         this.subscribe(this.id, "relay-response", this.relayResponse);
@@ -142,6 +144,7 @@ class AIRelayModel extends Elected {
         }
     }
 
+    // Called from the chat model
     relayRequest(request) {
         const requestId = ++this.requestId;
         this.pendingRequests.set(requestId, request);
@@ -158,14 +161,13 @@ class AIRelayModel extends Elected {
         });
     }
 
+    // Published by the AI relay view
     relayResponse(response) {
         // console.log(this.now(), "relay response", response);
         const request = this.pendingRequests.get(response.requestId);
         if (request) {
             this.pendingRequests.delete(response.requestId);
-            if (request.resolve) {
-                request.resolve(response);
-            }
+            request.resolve(response);
         }
     }
 }
@@ -188,9 +190,16 @@ class ChatView extends Multisynq.View {
         const resetButton = document.getElementById("resetButton");
         resetButton.onclick = event => this.onResetClick(event);
         this.subscribe("history", "update", this.refreshHistory);
-        this.refreshHistory(model.history);
+        this.refreshHistory();
 
         this.aiRelayView = new AIRelayView(this.wellKnownModel("aiRelay"));
+    }
+
+    // Called when the session is interrupted. Must release all resources
+    // and detach any other views
+    detach() {
+        super.detach();
+        this.aiRelayView.detach();
     }
 
     onSendClick() {
@@ -206,6 +215,7 @@ class ChatView extends Multisynq.View {
         this.publish("reset", "chatReset", this.viewId);
     }
 
+    // Called when the history is updated by the model
     refreshHistory() {
         const textOut = document.getElementById("textOut");
         textOut.innerHTML =
@@ -217,6 +227,12 @@ class ChatView extends Multisynq.View {
 
 }
 
+//------------------------------------------------------------------------------------------
+// AIRelayView
+//
+// If this view is the elected view, it relays AI requests to the AI worker.
+// It processes the AI response and publishes it back to the chat model.
+//------------------------------------------------------------------------------------------
 
 class AIRelayView extends Multisynq.View {
 
@@ -226,10 +242,12 @@ class AIRelayView extends Multisynq.View {
         this.subscribe(model.id, "relay-request", this.relayRequest);
     }
 
+    // Published by the model
     async relayRequest({electedViewId, requestId, request}) {
         if (electedViewId !== this.viewId) return; // only process requests if I'm the elected view
         console.log(electedViewId, "relaying AI request", requestId, request);
 
+        // send the request to the AI worker for processing
         const text = await this.processAIRequest(request);
 
         // If the elected view has changed while we were processing the request, ignore it
@@ -238,6 +256,7 @@ class AIRelayView extends Multisynq.View {
             return;
         }
 
+        // publish the response back to the model
         console.log(electedViewId, "relaying AI response", requestId);
         const response = {
             requestId,
@@ -246,11 +265,13 @@ class AIRelayView extends Multisynq.View {
         this.publish(this.model.id, "relay-response", response);
     }
 
+    // Processes the AI request by sending it to the AI worker and returning the response.
     async processAIRequest({users, history, text}) {
         const body = JSON.stringify({
             run: {
                 model: "@cf/meta/llama-3.1-8b-instruct-fast",
                 options: {
+                    max_tokens: 1024,
                     messages: [
                         {
                             role: "system",
@@ -324,8 +345,10 @@ Multisynq.Session.join({
     apiKey: "234567_Paste_Your_Own_API_Key_Here_7654321",
     model: ChatModel,
     view: ChatView,
+    // this viewData is sent as payload of the "view-join" event
+    // along with the viewId
     viewData: {
         userName: ThisUser,
     },
-    tps: 0, // since there are no future messages, we don't need ticks
+    tps: 0, // since the model does not use future messages, we don't need ticks
 });
