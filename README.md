@@ -46,6 +46,6 @@ This flow ensures that only one of the participants sends the external request t
 
 ## Chat AI
 
-The example uses Meta's "llama-3.1-8b-instruct-fast" model via a [Cloudflare AI worker](https://developers.cloudflare.com/workers-ai/). The system prompt includes a list of current users in the chat room, as well as the last 20 chat history entries for context. Whenever a user writes something, that prompt with context is sent to the service, and the response is relayed to the chat.
+The example uses Meta's "llama-3.1-8b-instruct-fast" model via a [Cloudflare AI worker](https://github.com/multisynq/multisynq-ai-worker). The system prompt includes a list of current users in the chat room, as well as the last 20 chat history entries for context. Whenever a user writes something, that prompt with context is sent to the service, and the response is relayed to the chat.
 
 The communication of the elected view with the service is encrypted by HTTPS, and the communication between the chat participants is end-to-end encrypted with a random session password passed in the URL, as is typical for Multisynq apps.
